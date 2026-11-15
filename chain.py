@@ -33,7 +33,7 @@ logger = logging.getLogger("pipeline")
 
 # --- Números que la consigna no fijó (pide "al menos un reintento") ---------
 INTENTOS_MAXIMOS = 3  # 1 intento normal + 2 reintentos.
-MAX_TOKENS_RESPUESTA = 512  # Tope de tokens de salida del modelo.
+MAX_TOKENS_RESPUESTA = 512  # Tope de tokens de salida. Se puede pisar con LLM_MAX_TOKENS.
 TIMEOUT_SEGUNDOS = 30.0
 # Espera entre intentos: ~1 s, después ~2 s (tope 4 s), más hasta 0,5 s al azar.
 # No se pasa "initial" porque la versión actual de tenacity lo marca como obsoleto.
@@ -123,16 +123,25 @@ def crear_modelo(proveedor: str | None = None) -> BaseChatModel:
     """Crea ChatOpenAI o ChatAnthropic. La clave sale SOLO del entorno."""
 
     proveedor = proveedor or entorno.proveedor_elegido()
+    max_tokens = entorno.leer_max_tokens(MAX_TOKENS_RESPUESTA)
     if proveedor == "openai":
         from langchain_openai import ChatOpenAI
 
-        return ChatOpenAI(
-            model=entorno.leer_modelo("openai"),
-            api_key=entorno.leer_clave("openai"),
-            temperature=0,
-            max_tokens=MAX_TOKENS_RESPUESTA,
-            timeout=TIMEOUT_SEGUNDOS,
-        )
+        parametros: dict[str, Any] = {
+            "model": entorno.leer_modelo("openai"),
+            "api_key": entorno.leer_clave("openai"),
+            "temperature": 0,
+            "max_tokens": max_tokens,
+            "timeout": TIMEOUT_SEGUNDOS,
+        }
+        # Proveedores gratuitos compatibles con OpenAI (Gemini, Groq):
+        # mismo ChatOpenAI, otra URL. Si no hay OPENAI_BASE_URL, no se pasa
+        # y ChatOpenAI usa la URL oficial de OpenAI.
+        base_url = entorno.leer_base_url()
+        if base_url:
+            parametros["base_url"] = base_url
+            logger.info("Usando un servidor compatible con OpenAI: %s", base_url)
+        return ChatOpenAI(**parametros)
     if proveedor == "anthropic":
         from langchain_anthropic import ChatAnthropic
 
@@ -140,7 +149,7 @@ def crear_modelo(proveedor: str | None = None) -> BaseChatModel:
         return ChatAnthropic(
             model=entorno.leer_modelo("anthropic"),
             api_key=entorno.leer_clave("anthropic"),
-            max_tokens=MAX_TOKENS_RESPUESTA,
+            max_tokens=max_tokens,
             timeout=TIMEOUT_SEGUNDOS,
         )
     raise ValueError(f"No sé crear un modelo real para '{proveedor}'.")

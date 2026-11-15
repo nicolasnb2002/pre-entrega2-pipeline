@@ -3,7 +3,7 @@
 Trabajo de **Nazareno Bergamo** para la pre-entrega 2 de Coderhouse (AI Engineering).
 Es un **Pipeline de Extracción de Entidades Técnicas** en Python 3.12 con LangChain. Recibe un párrafo sin procesar (un log de error o una descripción de arquitectura) y devuelve un objeto validado con Pydantic: tecnologías, nivel de criticidad y resumen técnico.
 
-La configuración del proveedor es la misma del Módulo 1 (pre-entrega 1): la variable `LLM_PROVIDER` elige `openai` o `anthropic`, y las claves salen solo del entorno.
+La configuración del proveedor es la misma del Módulo 1 (pre-entrega 1): la variable `LLM_PROVIDER` elige `openai` o `anthropic`, y las claves salen solo del entorno. Además, con `OPENAI_BASE_URL` se puede usar un proveedor **gratuito** compatible con OpenAI (Gemini o Groq) sin cambiar el código: ver "Probarlo gratis con Gemini o Groq".
 
 No hay informe ni PDF, como pide la consigna. Todo está en este README.
 
@@ -15,7 +15,7 @@ No hay informe ni PDF, como pide la consigna. Todo está en este README.
 | `tecnologias` lista de strings, no vacía | `schemas.py`: `min_length=1` y el validador `limpiar_tecnologias` |
 | `nivel_de_criticidad` enum baja, media, alta | `NivelDeCriticidad` en `schemas.py` |
 | `resumen_tecnico` string | `schemas.py` |
-| Cliente `ChatOpenAI` o `ChatAnthropic`, reutilizando el Módulo 1 | `crear_modelo()` en `chain.py` y `entorno.py` |
+| Cliente `ChatOpenAI` o `ChatAnthropic`, reutilizando el Módulo 1 | `crear_modelo()` en `chain.py` y `entorno.py`. Gemini y Groq entran por el mismo `ChatOpenAI` con `base_url` |
 | `ChatPromptTemplate` modular que acepta el texto y las instrucciones de formato | `construir_prompt()` en `chain.py`: variables `{texto}` e `{instrucciones_formato}` |
 | Sin f-strings dentro de la cadena | El prompt usa variables de LangChain. Los únicos f-strings del proyecto están en mensajes de error y logs |
 | Cadena LCEL `prompt \| model.with_structured_output(Schema)` | `construir_cadena()` en `chain.py` |
@@ -42,7 +42,12 @@ Si la cátedra pide otro valor, se cambia en el lugar indicado.
 | Espera entre intentos | Exponencial con azar: ~1 s, ~2 s (tope 4 s) | `ESPERA_ENTRE_INTENTOS` en `chain.py` |
 | Qué se reintenta | Solo errores de la respuesta: cortada por tokens, JSON roto, no cumple el esquema o falta el objeto. Un bug del programa no se reintenta | `ERRORES_REINTENTABLES` en `chain.py` |
 | Errores de red | Los reintenta el SDK de cada proveedor (trae sus propios reintentos), no `with_retry` | `crear_modelo()` en `chain.py` |
-| Tope de tokens de salida | 512 | `MAX_TOKENS_RESPUESTA` en `chain.py` |
+| Tope de tokens de salida | 512. Para Gemini y Groq recomiendo 2048, porque esos modelos razonan y el razonamiento gasta tokens del mismo tope | `LLM_MAX_TOKENS` en `.env` o `MAX_TOKENS_RESPUESTA` en `chain.py` |
+| Proveedores gratuitos | Se usan con el mismo `ChatOpenAI`, cambiando la URL con `OPENAI_BASE_URL`. No hay una clase nueva ni un tercer valor de `LLM_PROVIDER` | `leer_base_url()` en `entorno.py` y `crear_modelo()` en `chain.py` |
+| Sin `OPENAI_BASE_URL` | No se le pasa `base_url` a `ChatOpenAI`, así usa la URL oficial de OpenAI | `crear_modelo()` en `chain.py` |
+| URL mal escrita | Si `OPENAI_BASE_URL` no empieza con `https://` o `http://`, falla antes de llamar | `leer_base_url()` en `entorno.py` |
+| Modelo gratuito de Gemini | `gemini-3.5-flash-lite` (estable, con nivel gratuito y function calling según la doc de Google) | `OPENAI_MODEL` en `.env` |
+| Modelo gratuito de Groq | `openai/gpt-oss-20b` (modelo de producción, con nivel gratuito y tool use según la doc de Groq) | `OPENAI_MODEL` en `.env` |
 | Tiempo máximo por pedido | 30 segundos | `TIMEOUT_SEGUNDOS` en `chain.py` |
 | Método de salida estructurada | `method="function_calling"` en los dos proveedores (ver "El finish_reason") | `construir_cadena()` en `chain.py` |
 | Temperatura | 0 en OpenAI. A Anthropic no se le manda, igual que en el Módulo 1 | `crear_modelo()` en `chain.py` |
@@ -143,6 +148,50 @@ python -m pytest
 
 Usan dobles: no necesitan claves ni internet.
 
+## Probarlo gratis con Gemini o Groq
+
+Gemini (Google AI Studio) y Groq tienen nivel gratuito y aceptan pedidos con el mismo formato que OpenAI. Por eso alcanza con cambiar la URL: el código sigue usando `ChatOpenAI`, y la clave sigue saliendo de `OPENAI_API_KEY`.
+
+**No está probado con una clave real.** Las URLs, los modelos y el soporte de tool calling salen de la documentación oficial consultada el 14 de noviembre de 2026 (links abajo). Los niveles gratuitos tienen límites de pedidos por minuto y por día, y pueden cambiar.
+
+### Gemini
+
+1. Sacá una clave gratis en https://aistudio.google.com/apikey.
+2. Poné esto en el `.env`:
+
+```bash
+LLM_PROVIDER=openai
+OPENAI_API_KEY=tu_clave_de_gemini
+OPENAI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
+OPENAI_MODEL=gemini-3.5-flash-lite
+LLM_MAX_TOKENS=2048
+```
+
+3. Corré `python demo.py`.
+
+Fuentes: [compatibilidad con OpenAI](https://ai.google.dev/gemini-api/docs/openai) (URL base y function calling por esa vía, que Google todavía marca como beta), [ficha de Gemini 3.5 Flash-Lite](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite) (estable, function calling y structured outputs soportados) y [precios](https://ai.google.dev/gemini-api/docs/pricing) (nivel gratuito "Free of charge").
+
+### Groq
+
+1. Sacá una clave gratis en https://console.groq.com/keys.
+2. Poné esto en el `.env`:
+
+```bash
+LLM_PROVIDER=openai
+OPENAI_API_KEY=tu_clave_de_groq
+OPENAI_BASE_URL=https://api.groq.com/openai/v1
+OPENAI_MODEL=openai/gpt-oss-20b
+LLM_MAX_TOKENS=2048
+```
+
+3. Corré `python demo.py`.
+
+Fuentes: [compatibilidad con OpenAI](https://console.groq.com/docs/openai) (URL base), [tool use](https://console.groq.com/docs/tool-use) (`openai/gpt-oss-20b` soporta tool use, no en paralelo), [modelos](https://console.groq.com/docs/models) (es modelo de producción) y [límites](https://console.groq.com/docs/rate-limits) (el plan gratuito incluye ese modelo con 30 pedidos por minuto y 1000 por día).
+
+### Por qué tool calling importa acá
+
+`with_structured_output(..., method="function_calling")` le pasa el esquema al modelo como una "herramienta" y le exige que la use (`tool_choice` forzado, `parallel_tool_calls=False`). Si el proveedor no soportara tool calling, no habría objeto y el pipeline lo trataría como respuesta mal formada. Los dos proveedores documentan soporte de tool calling para los modelos elegidos. Lo que no pude verificar sin clave es que acepten exactamente los parámetros que manda `langchain-openai` (por ejemplo `max_completion_tokens` y `parallel_tool_calls`). Si alguno los rechaza, la API responde 400 y se ve en el error.
+
 ## Cómo funciona por dentro
 
 ```text
@@ -168,12 +217,12 @@ Si el modelo se queda sin tokens, corta la respuesta a la mitad y el JSON queda 
 
 Por qué `method="function_calling"`: en OpenAI el método por defecto de `with_structured_output` es `json_schema`. Con ese método, si la respuesta se corta por tokens, el SDK de OpenAI lanza su propio error (`LengthFinishReasonError`) adentro de la llamada al modelo, y el paso de verificación nunca ve el `finish_reason`. Con `function_calling` el mensaje crudo llega siempre a `verificar_respuesta()`, y el control es el mismo para los dos proveedores.
 
-Un detalle: si una respuesta se cortó por tokens, el reintento usa el mismo tope de 512 tokens. Para este esquema chico alcanza de sobra; si se cortara seguido, hay que subir `MAX_TOKENS_RESPUESTA`.
+Un detalle: si una respuesta se cortó por tokens, el reintento usa el mismo tope (512 por defecto). Para este esquema chico alcanza con un modelo que no razona; si se cortara seguido (pasa más con modelos que razonan, como Gemini 3.x o gpt-oss), subí `LLM_MAX_TOKENS` en el `.env`.
 
 ## Mapa de archivos
 
 - `schemas.py`: el contrato de Pydantic.
-- `entorno.py`: lee `LLM_PROVIDER`, las claves y los modelos del entorno (lógica del Módulo 1).
+- `entorno.py`: lee `LLM_PROVIDER`, las claves, los modelos, `OPENAI_BASE_URL` y `LLM_MAX_TOKENS` del entorno (lógica del Módulo 1).
 - `chain.py`: prompt, modelo, cadena LCEL, verificación, reintentos, logs y `process_text()`.
 - `modelo_falso.py`: un chat model de mentira para el demo y las pruebas.
 - `demo.py`: el mini-script asíncrono.
@@ -184,6 +233,8 @@ Un detalle: si una respuesta se cortó por tokens, el reintento usa el mismo top
 
 - **Schemas (Pydantic):** `ExtraccionTecnica` es el contrato: tres campos, la lista no puede estar vacía y la criticidad solo puede ser baja, media o alta.
   Si el modelo devuelve algo que no cumple, Pydantic lo rechaza y ese error se puede reintentar.
+- **Proveedores gratuitos:** Gemini y Groq hablan el mismo "idioma" que OpenAI, así que uso el mismo `ChatOpenAI` y solo cambio la URL con `OPENAI_BASE_URL`.
+  Si la variable no está, no se pasa `base_url` y va a OpenAI; la clave sale siempre de `OPENAI_API_KEY`.
 - **Prompt template:** `ChatPromptTemplate` con las variables `{texto}` e `{instrucciones_formato}`, sin f-strings.
   LangChain rellena las variables al invocar, y las instrucciones se pueden cambiar sin tocar la cadena.
 - **Cadena LCEL:** `prompt | modelo.with_structured_output(ExtraccionTecnica) | verificar_respuesta`.
@@ -208,9 +259,11 @@ Un detalle: si una respuesta se cortó por tokens, el reintento usa el mismo top
 - `process_text`: es async, devuelve el objeto, rechaza texto vacío sin llamar al modelo, y arma su propia cadena si no se le pasa una.
 - Configuración: proveedor por defecto, proveedor inválido, modelos por defecto, claves placeholder, y construcción de `ChatOpenAI` y `ChatAnthropic` con una clave falsa sin llamarlos.
 - Demo: corre los cinco casos en modo demostración.
+- `OPENAI_BASE_URL`: con la URL de Gemini o Groq se pasa `base_url` a `ChatOpenAI`; sin la variable (o vacía) no se pasa y queda la URL oficial de OpenAI; una URL mal escrita falla; Anthropic no la usa. `LLM_MAX_TOKENS` por defecto, desde el entorno e inválido.
 
 ## Límites conocidos
 
-- No se hizo ninguna llamada real a OpenAI ni a Anthropic. Los ids de modelo no están verificados contra una cuenta.
+- No se hizo ninguna llamada real a OpenAI, Anthropic, Gemini ni Groq. Los ids de modelo no están verificados contra una cuenta.
+- La compatibilidad OpenAI de Gemini está en beta según Google. No verifiqué que Gemini o Groq acepten todos los parámetros que manda `langchain-openai`, ni que devuelvan `finish_reason="length"` igual que OpenAI cuando se cortan.
 - El modelo falso imita el formato de respuesta de LangChain (tool calls y `response_metadata`). Un modelo real puede devolver campos extra en la metadata; el control solo mira `finish_reason` y `stop_reason`.
 - Si el modelo se niega a responder (un bloque "refusal" o `stop_reason="refusal"` en Anthropic), `process_text` lanza `RespuestaRechazada` y no reintenta, porque repetir el mismo pedido daría lo mismo. Esto está probado con el modelo falso, no con una negativa real.

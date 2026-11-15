@@ -123,6 +123,8 @@ async def modo_demostracion() -> None:
 
 async def modo_real(proveedor: str) -> None:
     print(f"Proveedor real: {proveedor}, modelo {entorno.leer_modelo(proveedor)}.")
+    if proveedor == "openai" and entorno.leer_base_url():
+        print(f"URL compatible con OpenAI: {entorno.leer_base_url()}")
     cadena = construir_cadena(crear_modelo(proveedor))
     await _correr("1. Ejemplo de la consigna", TEXTO_EJEMPLO, cadena)
     await _correr("2. Prueba de estrés: texto ambiguo", TEXTO_AMBIGUO, cadena)

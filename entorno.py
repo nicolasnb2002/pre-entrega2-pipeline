@@ -34,6 +34,10 @@ _PLACEHOLDERS = {
     "sk-...",
     "pega_tu_clave",
     "pegá_tu_clave",
+    "pegá_acá_la_clave_de_gemini",
+    "pegá_acá_la_clave_de_groq",
+    "tu_clave_de_gemini",
+    "tu_clave_de_groq",
 }
 
 
@@ -72,6 +76,43 @@ def leer_clave(proveedor: str) -> str:
     if not clave_util(valor):
         raise ValueError(f"Falta {variable} en el entorno (o es el texto de ejemplo).")
     return valor.strip()
+
+
+def leer_base_url() -> str | None:
+    """Lee OPENAI_BASE_URL (opcional).
+
+    Sirve para usar un proveedor compatible con OpenAI (Gemini, Groq) con el
+    mismo ChatOpenAI. Si no está o está vacía, devuelve None y se usa la URL
+    oficial de OpenAI.
+    """
+
+    valor = (os.getenv("OPENAI_BASE_URL") or "").strip()
+    if not valor:
+        return None
+    if not valor.startswith(("https://", "http://")):
+        raise ValueError(
+            f"OPENAI_BASE_URL='{valor}' no parece una URL (tiene que empezar con https://)."
+        )
+    return valor
+
+
+def leer_max_tokens(por_defecto: int) -> int:
+    """Lee LLM_MAX_TOKENS (opcional): tope de tokens de salida del modelo.
+
+    Los modelos que "piensan" (Gemini 3.x, gpt-oss) gastan tokens de
+    razonamiento dentro de ese tope; con un tope chico la respuesta se corta.
+    """
+
+    valor = (os.getenv("LLM_MAX_TOKENS") or "").strip()
+    if not valor:
+        return por_defecto
+    try:
+        numero = int(valor)
+    except ValueError:
+        raise ValueError(f"LLM_MAX_TOKENS='{valor}' tiene que ser un número entero.") from None
+    if numero < 1:
+        raise ValueError("LLM_MAX_TOKENS tiene que ser 1 o más.")
+    return numero
 
 
 def leer_modelo(proveedor: str) -> str:

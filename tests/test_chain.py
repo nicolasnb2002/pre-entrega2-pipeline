@@ -172,6 +172,7 @@ async def test_cortada_siempre_termina_en_fallo():
 @pytest.mark.parametrize("proveedor, variable", [("openai", "OPENAI_API_KEY"), ("anthropic", "ANTHROPIC_API_KEY")])
 def test_crear_modelo_real_sin_llamar(monkeypatch, proveedor, variable):
     monkeypatch.setenv(variable, "clave-falsa-de-test")
+    monkeypatch.delenv("LLM_MAX_TOKENS", raising=False)
     modelo = chain.crear_modelo(proveedor)
     assert modelo.max_tokens == chain.MAX_TOKENS_RESPUESTA
     # Construir la cadena tampoco hace ninguna llamada de red.
